@@ -6,32 +6,37 @@ var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 app.UseFileServer();
 
-InteropGo.initNetwork();
-InteropGo.createTrack();
+InteropRust.Init();
+InteropRust.CreateTrack();
+var r = InteropRust.CreateConnection();
 
-app.MapGet("/webrtc/start", () =>
-{
-  using var result = InteropGo.createConnection();
+var i = new UInt128(r.ClientId.lower, r.ClientId.upper);
 
-  Console.WriteLine("OFFER: ");
-  Console.WriteLine(result.GetOffer());
+Console.WriteLine(i);
 
-  return Results.Json(new
-  {
-    sdp = result.GetOffer(),
-    result.ClientId
-  });
-});
-
-app.MapPost("/webrtc/answer", (JsonObject json) =>
-{
-  var id = json["id"]!.GetValue<int>();
-  var sdp = json["sdp"]!.GetValue<string>();
- 
-  Console.WriteLine("ANSWER:");
-  Console.WriteLine(sdp);
-
-  InteropGo.setAnswer(id, sdp);
-});
-
-app.Run();
+// app.MapGet("/webrtc/start", () =>
+// {
+//   using var result = InteropRust.CreateConnection();
+//
+//   // Console.WriteLine("OFFER: ");
+//   // Console.WriteLine(result.GetOffer());
+//
+//   return Results.Json(new
+//   {
+//     sdp = result.GetOffer(),
+//     result.ClientId
+//   });
+// });
+//
+// app.MapPost("/webrtc/answer", (JsonObject json) =>
+// {
+//   var id = json["id"]!.GetValue<UInt64>();
+//   var sdp = json["sdp"]!.GetValue<string>();
+//  
+//   // Console.WriteLine("ANSWER:");
+//   // Console.WriteLine(sdp);
+//
+//   InteropRust.SetAnswer(id, sdp);
+// });
+//
+// app.Run();

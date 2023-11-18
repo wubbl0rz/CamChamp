@@ -1,64 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <title>Title</title>
+  <meta charset="UTF-8">
+  <title>Title</title>
 </head>
+
 <body>
-    <h3 style="font-family: Arial, Helvetica, sans-serif;">
-        <div id="CON">CONNECTION: </div>
-        <div id="NET">NETWORK: </div>
-    </h3>
-    <script>
-        async function main() {
-            let pc = new RTCPeerConnection();
+  <h3 style="font-family: Arial, Helvetica, sans-serif;">
+    <div id="CON">CONNECTION: </div>
+    <div id="NET">NETWORK: </div>
+  </h3>
+  <script>
+    async function main() {
+      let pc = new RTCPeerConnection();
 
-            pc.ontrack = async t => {
-                console.log(t);
-            };
+      pc.ontrack = async t => {
+        console.log(t);
+      };
 
-            let res = await fetch("/webrtc/start")
-            let json = await res.json();
+      let res = await fetch("/webrtc/start")
+      let json = await res.json();
 
-            console.log(json.sdp);
+      console.log(json.sdp);
 
-            function getColor(params) {
-                return pc.iceConnectionState == "connected" ? "green" : pc.iceConnectionState == "failed" ? "red" : "orange"
-            }
+      function getColor(params) {
+        return pc.iceConnectionState == "connected" ? "green" : pc.iceConnectionState == "failed" ? "red" : "orange"
+      }
 
-            pc.oniceconnectionstatechange = async e => {
-                let el = document.getElementById("NET")
-                el.innerHTML = `NETWORK: <span style="color: ${getColor()}">${pc.iceConnectionState}</span>`;
-                console.log(pc.iceConnectionState);
-            }
+      pc.oniceconnectionstatechange = async e => {
+        let el = document.getElementById("NET")
+        el.innerHTML = `NETWORK: <span style="color: ${getColor()}">${pc.iceConnectionState}</span>`;
+        console.log(pc.iceConnectionState);
+      }
 
-            pc.onconnectionstatechange = async e => {
-                let el = document.getElementById("CON")
-                el.innerHTML = `CONNECTION: <span style="color: ${getColor()}">${pc.connectionState}</span>`;
-                console.log(pc.connectionState);
-            }
+      pc.onconnectionstatechange = async e => {
+        let el = document.getElementById("CON")
+        el.innerHTML = `CONNECTION: <span style="color: ${getColor()}">${pc.connectionState}</span>`;
+        console.log(pc.connectionState);
+      }
 
-            await pc.setRemoteDescription({
-                type: "offer",
-                sdp: json.sdp
-            });
+      await pc.setRemoteDescription({
+        type: "offer",
+        sdp: json.sdp
+      });
 
-            let answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
+      let answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
 
-            await fetch("/webrtc/answer", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    id: json.clientId,
-                    sdp: answer.sdp
-                })                
-            })
-        }
+      await fetch("/webrtc/answer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: json.clientId,
+          sdp: answer.sdp
+        })
+      })
+    }
 
-        main()
-    </script>
+    main()
+  </script>
 </body>
+
 </html>

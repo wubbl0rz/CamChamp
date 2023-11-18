@@ -1,0 +1,13 @@
+[package]
+name = "webrtcrust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "webrtcrust"
+crate-type = ["cdylib"]
+
+[dependencies]
+webrtc = "0.9.0"
+tokio = "1.34.0"
+uuid = { version = "1.5.0", features = ["v4"] }
