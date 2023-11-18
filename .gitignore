@@ -1,0 +1,6 @@
+bin/
+obj/
+.idea
+Folder.DotSettings.user
+webrtc_linux.h
+webrtc_linux.so
