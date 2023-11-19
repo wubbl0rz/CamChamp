@@ -10,7 +10,7 @@ public struct CUint128
 
 public struct ConnectionResult() : IDisposable
 {
-  public CUint128 ClientId;
+  public UInt32 ClientId;
   private readonly IntPtr _offer = IntPtr.Zero;
 
   public string? GetOffer()
