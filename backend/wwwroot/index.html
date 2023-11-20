@@ -15,11 +15,6 @@
     async function main() {
       let pc = new RTCPeerConnection();
 
-      setTimeout(() => {
-        if (pc.connectionState != "connected")
-          window.location.reload();
-      }, 3000);
-
       pc.ontrack = async t => {
         console.log(t);
       };

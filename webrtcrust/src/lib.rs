@@ -7,6 +7,7 @@ use tokio::runtime::Runtime;
 use webrtc::api::{API, APIBuilder};
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264};
 use webrtc::api::setting_engine::SettingEngine;
+use webrtc::ice::network_type::NetworkType;
 use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
 use webrtc::ice::udp_network::UDPNetwork;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -106,7 +107,7 @@ pub async fn create_connection_internal() -> ConnectionResult {
         .await
         .unwrap();
     
-    peer_connection.on_peer_connection_state_change()
+    //peer_connection.on_peer_connection_state_change()
 
     for (_, track) in tracks.iter() {
         peer_connection.add_track(track.clone()).await.unwrap();
@@ -158,9 +159,9 @@ pub async fn init_internal() {
 
     //settings_engine.set_udp_network(UDPNetwork::Muxed(udp_mux));
 
-    let mut settings_engine = SettingEngine::default();
-
-    settings_engine.set_udp_network(
+    let mut setting_engine = SettingEngine::default();
+    setting_engine.set_network_types(vec![NetworkType::Udp4]);
+    setting_engine.set_udp_network(
         UDPNetwork::Muxed(
             UDPMuxDefault::new(
                 UDPMuxParams::new(
@@ -171,7 +172,7 @@ pub async fn init_internal() {
     );
 
     let api = APIBuilder::new()
-        .with_setting_engine(settings_engine)
+        .with_setting_engine(setting_engine)
         .with_media_engine(media_engine)
         .build();
 
