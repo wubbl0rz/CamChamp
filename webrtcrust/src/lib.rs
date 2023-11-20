@@ -1,38 +1,27 @@
-use std::collections::HashMap;
 use std::ffi::{c_char, CStr, CString};
-use std::future::Future;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::Arc;
+use std::time::Duration;
+
+use bytes::Bytes;
 use tokio::net::UdpSocket;
-use tokio::runtime::Runtime;
 use webrtc::api::{API, APIBuilder};
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264};
 use webrtc::api::setting_engine::SettingEngine;
 use webrtc::ice::network_type::NetworkType;
 use webrtc::ice::udp_mux::{UDPMuxDefault, UDPMuxParams};
 use webrtc::ice::udp_network::UDPNetwork;
+use webrtc::media::Sample;
 use webrtc::peer_connection::configuration::RTCConfiguration;
+use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::rtp_transceiver::rtp_codec::{RTCRtpCodecCapability, RTCRtpCodecParameters, RTPCodecType};
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
-use crate::registry::Registry;
+
+use state::AppState;
 
 mod registry;
-
-static TRACKS: OnceLock<RwLock<HashMap<u32, Arc<TrackLocalStaticSample>>>> = OnceLock::new();
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-static APPSTATE: OnceLock<AppState> = OnceLock::new();
-
-struct AppState {
-    api: API,
-    connections: Registry<RTCPeerConnection>
-}
-
-impl AppState {
-    // fn block_on<F: Future>(&self, future: F) -> F::Output {
-    //     self.runtime.block_on(future)
-    // }
-}
+mod state;
 
 pub fn get_capabilities() -> RTCRtpCodecCapability {
     return RTCRtpCodecCapability {
@@ -41,76 +30,132 @@ pub fn get_capabilities() -> RTCRtpCodecCapability {
         channels: 0,
         sdp_fmtp_line: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f".to_owned(),
         rtcp_feedback: vec![],
-    }
+    };
 }
 
 #[repr(C)]
 pub struct ConnectionResult {
     client_id: u32,
-    offer: *mut c_char
+    offer: *mut c_char,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn create_track() {
-    RUNTIME.get().unwrap().block_on(create_track_internal())
+pub unsafe extern "C" fn send_frame(id: u32, len: usize, ptr: *const u8) {
+    AppState::INSTANCE().block_on(send_frame_internal(id, len, ptr))
 }
 
-pub async fn create_track_internal() {
-    let track_id = 2;
+pub async fn send_frame_internal(id: u32, len: usize, ptr: *const u8) {
+    let tracks = &AppState::INSTANCE().tracks;
 
-    let track = TrackLocalStaticSample::new(get_capabilities(),
-                                            track_id.to_string(),
-                                            track_id.to_string());
+    if let Some(track) = tracks.get(id) {
+        let bytes = Bytes::from(unsafe {
+            std::slice::from_raw_parts(ptr, len)
+        });
 
-    let mut tracks = TRACKS
-        .get()
-        .unwrap()
-        .write()
-        .unwrap();
+        let sample = Sample {
+            data: bytes,
+            duration: Duration::from_secs(1),
+            ..Sample::default()
+        };
 
-    tracks.insert(track_id, Arc::new(track));
+        track.write_sample(&sample).await.unwrap();
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn set_answer(id : u32, ptr : *const c_char) {
-    RUNTIME.get().unwrap().block_on(set_answer_internal(id, ptr));
-    println!("KEKL")
+pub unsafe extern "C" fn create_track() -> u32 {
+    AppState::INSTANCE().block_on(create_track_internal())
 }
 
-pub async unsafe fn set_answer_internal(id : u32, ptr : *const c_char) {
-    let connections = &APPSTATE.get().unwrap().connections;
+pub async fn create_track_internal() -> u32 {
+    let tracks = &AppState::INSTANCE().tracks;
 
-    let peer_connection = connections.get(id as u32);
+    let (id, _) = tracks.add(|id| {
+        let track = TrackLocalStaticSample::new(get_capabilities(),
+                                                id.to_string(),
+                                                id.to_string());
+        track
+    });
 
-    let sdp = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
+    return id;
+}
 
-    let answer = RTCSessionDescription::answer(sdp).unwrap();
+#[no_mangle]
+pub unsafe extern "C" fn set_answer(id: u32, ptr: *const c_char) {
+    AppState::INSTANCE().block_on(set_answer_internal(id, ptr));
+}
 
-    peer_connection.set_remote_description(answer).await.unwrap();
+pub async unsafe fn set_answer_internal(id: u32, ptr: *const c_char) {
+    let connections = &AppState::INSTANCE().connections;
+
+    if let Some(peer_connection) = connections.get(id) {
+        let sdp = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
+
+        let answer = RTCSessionDescription::answer(sdp).unwrap();
+
+        peer_connection.set_remote_description(answer).await.unwrap();
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn create_connection() -> ConnectionResult {
-    RUNTIME.get().unwrap().block_on(create_connection_internal())
+    AppState::INSTANCE().block_on(create_connection_internal())
 }
 
-pub async fn create_connection_internal() -> ConnectionResult {
-    let api = &APPSTATE.get().unwrap().api;
-    let tracks = TRACKS
-        .get()
-        .unwrap()
-        .read()
-        .unwrap();
+pub async fn setup_connection() -> (u32, Arc<RTCPeerConnection>) {
+    let api = &AppState::INSTANCE().api;
+    let connections = &AppState::INSTANCE().connections;
 
     let peer_connection = api
         .new_peer_connection(RTCConfiguration::default())
         .await
         .unwrap();
-    
-    //peer_connection.on_peer_connection_state_change()
 
-    for (_, track) in tracks.iter() {
-        peer_connection.add_track(track.clone()).await.unwrap();
+    let (id, con) = connections.add(|id| {
+        peer_connection.on_peer_connection_state_change(Box::new(move |s| {
+            let connections = &AppState::INSTANCE().connections;
+
+            if let Some(peer_connection) = connections.get(id) {
+                match peer_connection.connection_state() {
+                    RTCPeerConnectionState::Disconnected |
+                    RTCPeerConnectionState::Failed |
+                    RTCPeerConnectionState::Closed => {
+                        connections.del(id);
+                    }
+                    _ => {}
+                };
+
+                println!("Peer Connection {id} State has changed: {s}");
+            }
+
+            Box::pin(async {})
+        }));
+        peer_connection
+    });
+
+    // clean abandoned connections
+    tokio::spawn(async move {
+        let connections = &AppState::INSTANCE().connections;
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        if let Some(peer_connection) = connections.get(id) {
+            if peer_connection.connection_state() == RTCPeerConnectionState::New {
+                connections.del(id);
+            }
+        }
+    });
+
+    return (id, con);
+}
+
+pub async fn create_connection_internal() -> ConnectionResult {
+    let tracks = &AppState::INSTANCE().tracks;
+
+    let (id, peer_connection) = setup_connection().await;
+
+    for kv in tracks.iter() {
+        peer_connection.add_track(kv.value().clone()).await.unwrap();
     }
 
     let offer = peer_connection.create_offer(None).await.unwrap();
@@ -119,18 +164,14 @@ pub async fn create_connection_internal() -> ConnectionResult {
     peer_connection.set_local_description(offer).await.unwrap();
     let _ = gather_complete.recv().await;
 
-    let connections = &APPSTATE.get().unwrap().connections;
-
     let str = CString::new(peer_connection.local_description()
         .await.unwrap().sdp)
         .unwrap();
 
-    let id = connections.add(peer_connection);
-
     return ConnectionResult {
         client_id: id,
-        offer: str.into_raw()
-    }
+        offer: str.into_raw(),
+    };
 }
 
 #[no_mangle]
@@ -140,52 +181,50 @@ pub extern "C" fn init() {
         .build()
         .unwrap();
 
-    RUNTIME.set(runtime).unwrap();
+    let api = runtime.block_on(init_internal());
 
-    RUNTIME.get().unwrap().block_on(init_internal())
+    AppState::INIT(runtime, api, true);
+
+    AppState::INSTANCE().block_on(async {
+        tokio::spawn(async {
+            let connections = &AppState::INSTANCE().connections;
+
+            loop {
+                tokio::time::sleep(Duration::from_secs(15)).await;
+
+                let count = connections.len();
+
+                println!("Active connections: {count}");
+            }
+        });
+    });
 }
 
-pub async fn init_internal() {
+async fn init_internal() -> API {
     let mut media_engine = MediaEngine::default();
 
-    media_engine.register_codec(RTCRtpCodecParameters{
+    media_engine.register_codec(RTCRtpCodecParameters {
         capability: get_capabilities(),
         payload_type: 96,
         ..Default::default()
-    },RTPCodecType::Video).unwrap();
+    }, RTPCodecType::Video).unwrap();
 
-    // let udp_socket = UdpSocket::bind(("0.0.0.0", 36363)).await.unwrap();
-    // let udp_mux = UDPMuxDefault::new(UDPMuxParams::new(udp_socket));
-
-    //settings_engine.set_udp_network(UDPNetwork::Muxed(udp_mux));
+    let udp_socket = UdpSocket::bind(("0.0.0.0", 36363)).await.unwrap();
+    let udp_mux = UDPMuxDefault::new(UDPMuxParams::new(udp_socket));
 
     let mut setting_engine = SettingEngine::default();
     setting_engine.set_network_types(vec![NetworkType::Udp4]);
-    setting_engine.set_udp_network(
-        UDPNetwork::Muxed(
-            UDPMuxDefault::new(
-                UDPMuxParams::new(
-                    tokio::net::UdpSocket::bind("0.0.0.0:36363").await.unwrap()
-                )
-            )
-        )
-    );
+    setting_engine.set_udp_network(UDPNetwork::Muxed(udp_mux));
 
     let api = APIBuilder::new()
         .with_setting_engine(setting_engine)
         .with_media_engine(media_engine)
         .build();
 
-    let _ = APPSTATE.set(AppState{
-        api,
-        connections: Registry::new()
-    });
-    let _ = TRACKS.set(RwLock::new(HashMap::new()));
-
-    //TODO: cleanup old connections
+    return api;
 }
 
-fn main() {
-
+#[no_mangle]
+pub unsafe extern "C" fn free(ptr: *mut c_char) {
+    let _ = CString::from_raw(ptr);
 }
-

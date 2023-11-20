@@ -1,50 +1,50 @@
-use std::collections::hash_map::Iter;
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::collections::hash_map::RandomState;
+use std::sync::Arc;
 
-fn lul()
-{
-    let r : Registry<u32> = Registry::new();
-    r.add(2);
-
-    for blub in r.all().iter() {
-
-    }
-}
+use dashmap::DashMap;
+use dashmap::iter::Iter;
 
 pub struct Registry<T> {
-    store: RwLock<HashMap<u32, Arc<T>>>
+    store: DashMap<u32, Arc<T>>
 }
 
 impl<T> Registry<T> {
     pub fn new() -> Self {
         Self {
-            store: RwLock::new(HashMap::new())
+            store: DashMap::new()
         }
     }
 
-    pub fn all(&self) -> RwLockReadGuard<HashMap<u32, Arc<T>>> {
-        return self.store.read().unwrap();
+    pub fn len(&self) -> usize {
+        return self.store.len();
     }
 
-    pub fn add(&self, e : T) -> u32{
-        let mut map = self.store.write().unwrap();
+    pub fn iter(&self) -> Iter<u32, Arc<T>, RandomState, DashMap<u32, Arc<T>>> {
+        return self.store.iter();
+    }
 
+    pub fn add<F>(&self, cb: F) -> (u32, Arc<T>) where F: FnOnce(u32) -> T
+    {
         let id = (0..u32::MAX)
             .into_iter()
-            .find(|id| !map.contains_key(id))
+            .find(|id| !self.store.contains_key(id))
             .expect("NO FREE ID FOUND");
 
-        map.insert(id, Arc::new(e));
-        return id;
+        let t = cb(id);
+        let arc = Arc::new(t);
+        self.store.insert(id, arc.clone());
+
+        return (id, arc.clone());
     }
 
-    pub fn get(&self, id : u32) -> Arc<T> {
-        return self.store.read().unwrap().get(&id).unwrap().clone();
+    pub fn get(&self, id : u32) -> Option<Arc<T>> {
+        return match self.store.get(&id) {
+            None => None,
+            Some(r) => Some(r.value().clone())
+        };
     }
 
     pub fn del(&self, id : u32) {
-        self.store.write().unwrap().remove(&id);
+        self.store.remove(&id);
     }
 }

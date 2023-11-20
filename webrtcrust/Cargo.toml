@@ -11,3 +11,5 @@ crate-type = ["cdylib"]
 webrtc = "0.9.0"
 tokio = "1.34.0"
 uuid = { version = "1.5.0", features = ["v4"] }
+dashmap = "5.5.3"
+bytes = "1.5.0"

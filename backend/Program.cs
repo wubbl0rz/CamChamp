@@ -1,19 +1,28 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using backend;
+using FFmpeg.AutoGen;
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 app.UseFileServer();
 
 InteropRust.Init();
-InteropRust.CreateTrack();
+var id = InteropRust.CreateTrack();
 
-// var r = InteropRust.CreateConnection();
-//
-// var i = new UInt128(r.ClientId.lower, r.ClientId.upper);
-//
-// Console.WriteLine(i);
+Task.Run(() =>
+{
+  unsafe
+  {
+    AVDictionary* dict = null;
+    ffmpeg.av_dict_set(&dict, "rtsp_transport", "tcp", 0);
+    ffmpeg.av_dict_set(&dict, "stimeout", "5000000", 0);
+    
+    var formatContext = ffmpeg.avformat_alloc_context();
+    
+    var result = ffmpeg.avformat_open_input(&formatContext, "", null, &dict);
+  }
+});
 
 app.MapGet("/webrtc/start", () =>
 {
@@ -31,7 +40,7 @@ app.MapGet("/webrtc/start", () =>
 
 app.MapPost("/webrtc/answer", (JsonObject json) =>
 {
-  var id = json["id"]!.GetValue<UInt64>();
+  var id = json["id"]!.GetValue<uint>();
   var sdp = json["sdp"]!.GetValue<string>();
  
   Console.WriteLine("ANSWER:");
