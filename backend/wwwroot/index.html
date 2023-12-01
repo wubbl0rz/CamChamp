@@ -11,12 +11,18 @@
     <div id="CON">CONNECTION: </div>
     <div id="NET">NETWORK: </div>
   </h3>
+
+  <video id="player" style="width: 100%; background: black;" muted autoplay playsinline></video>
+
   <script>
     async function main() {
       let pc = new RTCPeerConnection();
 
       pc.ontrack = async t => {
         console.log(t);
+        let player = document.getElementById("player");
+        console.log(player);
+        player.srcObject = t.streams[0];
       };
 
       let res = await fetch("/webrtc/start")

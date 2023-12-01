@@ -40,11 +40,11 @@ pub struct ConnectionResult {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn send_frame(id: u32, len: usize, ptr: *const u8) {
-    AppState::INSTANCE().block_on(send_frame_internal(id, len, ptr))
+pub unsafe extern "C" fn send_frame(id: u32,  duration : f64, len: usize, ptr: *const u8) {
+    AppState::INSTANCE().block_on(send_frame_internal(id, duration, len, ptr))
 }
 
-pub async fn send_frame_internal(id: u32, len: usize, ptr: *const u8) {
+pub async fn send_frame_internal(id: u32, duration : f64, len: usize, ptr: *const u8) {
     let tracks = &AppState::INSTANCE().tracks;
 
     if let Some(track) = tracks.get(id) {
@@ -52,9 +52,11 @@ pub async fn send_frame_internal(id: u32, len: usize, ptr: *const u8) {
             std::slice::from_raw_parts(ptr, len)
         });
 
+        let micros = duration * 1000.0;
+
         let sample = Sample {
             data: bytes,
-            duration: Duration::from_secs(1),
+            duration: Duration::from_micros(micros as u64),
             ..Sample::default()
         };
 
@@ -194,6 +196,7 @@ pub extern "C" fn init() {
 
                 let count = connections.len();
 
+                println!("Active connections: {count}");
                 println!("Active connections: {count}");
             }
         });

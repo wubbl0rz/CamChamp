@@ -51,5 +51,5 @@ public unsafe class InteropRust
   public static extern void SetAnswer(ulong id, [MarshalAs(UnmanagedType.LPUTF8Str)]string sdp);
   
   [DllImport("webrtcrust", EntryPoint = "send_frame")]
-  public static extern void SendFrame(uint id, ulong len, IntPtr ptr);
+  public static extern void SendFrame(uint id, double duration, ulong len, IntPtr ptr);
 }

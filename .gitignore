@@ -6,3 +6,4 @@ webrtc_linux.h
 webrtc_linux.so
 libwebrtcrust.so
 target/
+backend/ffmpeg*

@@ -10,17 +10,49 @@ app.UseFileServer();
 InteropRust.Init();
 var id = InteropRust.CreateTrack();
 
+//TODO: autodetect
+ffmpeg.RootPath = "ffmpeg/lib";
+
+ffmpeg.av_log_set_level(ffmpeg.AV_LOG_QUIET);
+
 Task.Run(() =>
 {
+  return;
   unsafe
   {
     AVDictionary* dict = null;
     ffmpeg.av_dict_set(&dict, "rtsp_transport", "tcp", 0);
     ffmpeg.av_dict_set(&dict, "stimeout", "5000000", 0);
-    
+  
     var formatContext = ffmpeg.avformat_alloc_context();
-    
-    var result = ffmpeg.avformat_open_input(&formatContext, "", null, &dict);
+  
+    var result = ffmpeg.avformat_open_input(&formatContext, "rtsp://localhost:8554/mystream", null, &dict);
+
+    result = ffmpeg.avformat_find_stream_info(formatContext, &dict);
+
+    var stream = formatContext->GetStreams(AVMediaType.AVMEDIA_TYPE_VIDEO).First();
+  
+    var pkt = ffmpeg.av_packet_alloc();
+
+    while (true)
+    {
+      //TODO: clear pkt ?
+      result = ffmpeg.av_read_frame(formatContext, pkt);
+
+      Console.WriteLine(result);
+
+      var durationMs = pkt->duration * ((stream.time_base.num / (double)stream.time_base.den) * 1000);
+
+      Console.WriteLine(pkt->buf->size);
+
+      if (stream.index != pkt->stream_index)
+        continue;
+
+      Console.WriteLine(durationMs);
+
+      InteropRust.SendFrame(id, durationMs, pkt->buf->size, (IntPtr)pkt->buf->data);
+
+    }
   }
 });
 
